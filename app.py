@@ -165,7 +165,7 @@ def rodar_turno_servidor():
     # Classificação de dados para o censo gráfico
     censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0}
     for s in pop_final:
-        has_F, has_H, has_C, _ = "F" in s['dna'], "H" in s['dna'], "C" in s['dna']
+        has_F, has_H, has_C = "F" in s['dna'], "H" in s['dna'], "C" in s['dna']
         if has_H and has_C: censo['Onívoro'] += 1
         elif has_C: censo['Carnívoro'] += 1
         elif has_H: censo['Herbívoro'] += 1

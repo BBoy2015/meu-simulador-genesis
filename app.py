@@ -2,25 +2,29 @@ import streamlit as st
 import pandas as pd
 import random
 import time
+import numpy as np  # opcional, mas recomendado
 
 st.set_page_config(page_title="Gênesis - Vida Artificial", layout="wide")
 
-# --- INICIALIZAÇÃO DO SERVIDOR ---
-if 'turno' not in st.session_state:
-    st.session_state.turno = 1
-    st.session_state.dia = 1
-    st.session_state.ano = 1
-    st.session_state.estacao = "Primavera"
-    st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Respiração Anaeróbica e Fotorrespiração ativadas."]
-    
-    st.session_state.O2 = 21000.0  
-    st.session_state.CO2 = 1000.0  
-    
-    # Adicionado o Gene R (Respiração Aeróbica)
-    st.session_state.genes_descobertos = set(["F", "H", "C", "D", "A", "T", "R"])
-    st.session_state.genes_extintos = set()
-    st.session_state.inibicoes = {'H': 'F', 'C': 'F'}
+# ------------------ FUNÇÕES DA SIMULAÇÃO ------------------
+def inicializar_estado():
+    """Retorna o estado inicial completo."""
+    estado = {
+        'turno': 1,
+        'dia': 1,
+        'ano': 1,
+        'estacao': "Primavera",
+        'historico_populacao': [],
+        'alertas': ["Gênesis: Respiração Celular Universal e Efeito Rubisco ativados."],
+        'O2': 21000.0,
+        'CO2': 1000.0,
+        'genes_descobertos': set(["F", "H", "C", "D", "A", "T", "R"]),
+        'genes_extintos': set(),
+        'inibicoes': {'H': 'F', 'C': 'F'},
+        'mapa': [],
+        'populacao': [],
+        'contagem_genes': {}
+    }
 
     tamanho = 15
     mapa = []
@@ -32,163 +36,174 @@ if 'turno' not in st.session_state:
             temp = 'Frio' if y < 4 else ('Quente' if y > 10 else 'Temperado')
             linha.append({'tipo': tipo, 'temperatura': temp, 'nutrientes': 0})
         mapa.append(linha)
-    st.session_state.mapa = mapa
+    estado['mapa'] = mapa
 
     populacao = []
-    # Os seres primordiais nascem com o gene R para não morrerem logo na atmosfera atual de 21% de O2
     for _ in range(25):
         populacao.append({
             'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1),
             'energia': 100, 'dna': "FFffddddAARR" if random.random() < 0.5 else "FFffddddTTRR",
             'dna_ativo': "", 'geracao': 1, 'raca': "Primitiva"
         })
-    st.session_state.populacao = populacao
+    estado['populacao'] = populacao
+    return estado
 
-if st.session_state.CO2 < 0 or st.session_state.O2 > 100000:
-    st.session_state.O2 = 21000.0
-    st.session_state.CO2 = 1000.0
-
-st.title("🧬 Projecto Gênesis: Biosfera Avançada")
-
-st.sidebar.header("🕹️ Painel de Controlo")
-executando = st.sidebar.checkbox("Ativar Simulação", value=True)
-velocidade = st.sidebar.slider("Velocidade (seg/ciclo)", 0.1, 2.0, 0.4)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🗺️ Genes Especiais")
-st.sidebar.info("💧 `A` (Água) | ⛰️ `T` (Terra) | 🦅 `P` (Voo) | 🫁 `R` (Resp. Aeróbica)")
-
-# --- MOTOR DO JOGO ---
-def rodar_turno_servidor():
+def processar_turno(estado):
+    """Executa um turno completo e retorna o estado atualizado e novos alertas."""
     tamanho = 15
-    st.session_state.turno += 1
-    
-    if st.session_state.turno % 10 == 0: st.session_state.dia += 1
-    if st.session_state.dia > 30:
-        st.session_state.dia = 1
-        st.session_state.ano += 1
+    estado['turno'] += 1
+    if estado['turno'] % 10 == 0:
+        estado['dia'] += 1
+    if estado['dia'] > 30:
+        estado['dia'] = 1
+        estado['ano'] += 1
         estacoes = ["Primavera", "Verão", "Outono", "Inverno"]
-        st.session_state.estacao = estacoes[st.session_state.ano % 4]
+        estado['estacao'] = estacoes[estado['ano'] % 4]
 
     ganho_solar = 6.0
-    if st.session_state.estacao == "Inverno": ganho_solar = 3.0
-    if st.session_state.estacao == "Verão": ganho_solar = 9.0
-    if st.session_state.CO2 > 5000: ganho_solar += 2.0 
-    
+    if estado['estacao'] == "Inverno":
+        ganho_solar = 3.0
+    elif estado['estacao'] == "Verão":
+        ganho_solar = 9.0
+    if estado['CO2'] > 5000:
+        ganho_solar += 2.0
+
     novos_nascidos = []
-    pop_atual = st.session_state.populacao
-    mapa_atual = st.session_state.mapa
+    pop_atual = estado['populacao']
+    mapa_atual = estado['mapa']
+    alertas = []
+
+    # Extrair coordenadas para vetorização (se disponível)
+    try:
+        coords = np.array([[s['x'], s['y']] for s in pop_atual if s['energia'] > 0])
+    except:
+        coords = None
 
     for ser in pop_atual:
-        if ser['energia'] <= 0: continue
-        
+        if ser['energia'] <= 0:
+            continue
         quad = mapa_atual[ser['y']][ser['x']]
-        dna_base = ser['dna'] 
-        
+        dna_base = ser['dna']
+        # Atualiza DNA ativo (com supressão)
         dna_ativo = dna_base
-        for supressor, alvo in st.session_state.inibicoes.items():
+        for supressor, alvo in estado['inibicoes'].items():
             if supressor in dna_ativo:
-                dna_ativo = dna_ativo.replace(alvo, "") 
-        
-        ser['dna_ativo'] = dna_ativo 
-        
+                dna_ativo = dna_ativo.replace(alvo, "")
+        ser['dna_ativo'] = dna_ativo
+
         has_F, has_H, has_C = "F" in dna_ativo, "H" in dna_ativo, "C" in dna_ativo
         has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
-        has_R = "R" in dna_ativo # Gene de Respiração de Oxigénio
-        
+        has_R = "R" in dna_ativo
+
         custo = 1.5 + (len(dna_base) * 0.05)
-        if quad['temperatura'] == 'Frio': custo += 1.5
-        if has_P: custo += 2.0 
-        if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 4.0 
-        if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 4.0 
+        if quad['temperatura'] == 'Frio':
+            custo += 1.5
+        if has_P:
+            custo += 2.0
+        if quad['tipo'] == 'Terra' and not has_T and not has_P:
+            custo += 4.0
+        if quad['tipo'] == 'Água' and not has_A and not has_P:
+            custo += 4.0
 
         passos_base = 1
 
-        # --- NOVA MECÂNICA: RESPIRAÇÃO E TOXICIDADE DO O2 ---
+        # Respiração
         if has_R:
-            # Ser Aeróbico (Breathe O2)
-            if st.session_state.O2 >= 0.5:
-                st.session_state.O2 -= 0.5
-                st.session_state.CO2 += 0.5
-            if st.session_state.O2 < 5000.0: # Abaixo de 5% asfixiam
-                ser['energia'] -= 4.0
-                passos_base = 0 
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: Asfixia Aeróbica por falta de O2!")
-        else:
-            # Ser Anaeróbico (Não precisa de O2, mas sofre Toxicidade se houver muito)
-            if st.session_state.O2 > 5000.0: # Acima de 5% é veneno
-                ser['energia'] -= 5.0
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: Toxicidade do O2 a matar seres anaeróbicos!")
-
-        # --- NOVA MECÂNICA: FOTOSSÍNTESE E FOTORRESPIRAÇÃO ---
-        if has_F:
-            # Se a planta tem o gene R e o O2 passa dos 25%, a fotossíntese paralisa (Fotorrespiração)
-            if has_R and st.session_state.O2 > 25000.0:
-                ser['energia'] -= 1.0 # Perde energia sem produzir O2
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: O2 muito alto! Plantas a sofrer de Fotorrespiração.")
+            taxa_respiracao = 1.5 if (has_H or has_C) else 0.5
+            if estado['O2'] >= taxa_respiracao:
+                estado['O2'] -= taxa_respiracao
+                estado['CO2'] += taxa_respiracao
             else:
-                if st.session_state.CO2 >= 1.5:
-                    st.session_state.CO2 -= 1.5
-                    st.session_state.O2 += 1.5
+                ser['energia'] -= 4.0
+                passos_base = 0
+                if random.random() < 0.005:
+                    alertas.append(f"T{estado['turno']}: O2 insuficiente! Asfixia Aeróbica.")
+        else:
+            if estado['O2'] > 5000.0:
+                ser['energia'] -= 5.0
+                if random.random() < 0.005:
+                    alertas.append(f"T{estado['turno']}: Toxicidade de O2 a queimar seres anaeróbicos!")
+
+        # Fotossíntese
+        if has_F:
+            if has_R and estado['O2'] > 21800.0:
+                ser['energia'] -= 1.5
+                if random.random() < 0.005:
+                    alertas.append(f"T{estado['turno']}: O2 a 21.8%! Plantas entram em Fotorrespiração.")
+            else:
+                if estado['CO2'] >= 2.0:
+                    estado['CO2'] -= 2.0
+                    estado['O2'] += 2.0
                     ser['energia'] += ganho_solar if quad['tipo'] == 'Água' else ganho_solar * 0.6
                 else:
-                    ser['energia'] -= 2.0 
-                    if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: Fome de Carbono (Sufoco da Planta)!")
+                    ser['energia'] -= 2.0
+                    if random.random() < 0.005:
+                        alertas.append(f"T{estado['turno']}: Fome de Carbono (Plantas a sufocar)!")
 
         ser['energia'] -= custo
 
+        # Decomposição (gene D)
         if "D" in dna_ativo and quad['nutrientes'] > 0:
             abs_nutri = min(quad['nutrientes'], 15)
             quad['nutrientes'] -= abs_nutri
             ser['energia'] += abs_nutri * 1.2
+            if estado['O2'] >= 1.0:
+                estado['O2'] -= 1.0
+                estado['CO2'] += 1.0
 
+        # Movimento
         passos = passos_base + (1 if has_P else 0)
-        if random.random() < 0.75:
+        if random.random() < 0.75 and passos > 0:
+            # Movimento individual (mantido para simplicidade)
             for _ in range(passos):
-                ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
-                ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
+                dx = random.choice([-1, 0, 1])
+                dy = random.choice([-1, 0, 1])
+                ser['x'] = max(0, min(tamanho-1, ser['x'] + dx))
+                ser['y'] = max(0, min(tamanho-1, ser['y'] + dy))
 
-        limite_mitose = 130 if (has_F and st.session_state.CO2 > 5000) else 160
+        # Reprodução
+        limite_mitose = 130 if (has_F and estado['CO2'] > 5000) else 160
         if ser['energia'] >= limite_mitose:
             ser['energia'] = 60
             letras = list(dna_base)
-            
             if random.random() < 0.35:
-                if random.random() < 0.5: 
+                if random.random() < 0.5:
                     nova_letra = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
                     letras.append(nova_letra)
-                    
-                    if nova_letra.isupper() and nova_letra not in st.session_state.genes_descobertos and random.random() < 0.10:
-                        alvo = random.choice([g for g in st.session_state.genes_descobertos if g.isupper()])
+                    if nova_letra.isupper() and nova_letra not in estado['genes_descobertos'] and random.random() < 0.10:
+                        alvo = random.choice([g for g in estado['genes_descobertos'] if g.isupper()])
                         if nova_letra != alvo:
-                            st.session_state.inibicoes[nova_letra] = alvo
-                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! Gene [{nova_letra}] inativa [{alvo}]!")
-
-                else: 
-                    if len(letras) > 3: letras.pop(random.randint(0, len(letras)-1))
-            
+                            estado['inibicoes'][nova_letra] = alvo
+                            alertas.append(f"T{estado['turno']}: ⛔ EPISTASIA! Gene [{nova_letra}] inativa [{alvo}]!")
+                else:
+                    if len(letras) > 3:
+                        letras.pop(random.randint(0, len(letras)-1))
             novos_nascidos.append({
-                'x': ser['x'], 'y': ser['y'], 'energia': 60, 'dna': "".join(letras), 'dna_ativo': "",
+                'x': ser['x'], 'y': ser['y'], 'energia': 60,
+                'dna': "".join(letras), 'dna_ativo': "",
                 'geracao': ser['geracao'] + 1, 'raca': ser['raca']
             })
 
+    # Juntar população viva e novos
     pop_viva = [s for s in pop_atual if s['energia'] > 0] + novos_nascidos
 
+    # Interações (predação)
     posicoes = {}
     for s in pop_viva:
         pos = (s['x'], s['y'])
-        if pos not in posicoes: posicoes[pos] = []
-        posicoes[pos].append(s)
+        posicoes.setdefault(pos, []).append(s)
 
     for pos, seres_aqui in posicoes.items():
-        if len(seres_aqui) < 2: continue
+        if len(seres_aqui) < 2:
+            continue
         for a in seres_aqui:
             for b in seres_aqui:
-                if a == b or a['energia'] <= 0 or b['energia'] <= 0: continue
-                dna_a, dna_b = a.get('dna_ativo', a['dna']), b.get('dna_ativo', b['dna'])
+                if a is b or a['energia'] <= 0 or b['energia'] <= 0:
+                    continue
+                dna_a = a.get('dna_ativo', a['dna'])
+                dna_b = b.get('dna_ativo', b['dna'])
                 has_Fa, has_Ha, has_Ca = "F" in dna_a, "H" in dna_a, "C" in dna_a
                 has_Fb = "F" in dna_b
-                
                 if has_Ca and not has_Fb:
                     b['energia'] = 0
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 15
@@ -198,12 +213,15 @@ def rodar_turno_servidor():
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 10
                     a['energia'] = min(200, a['energia'] + 40)
 
+    # Adicionar nutrientes de mortos
     for s in pop_atual:
         if s['energia'] <= 0:
             mapa_atual[s['y']][s['x']]['nutrientes'] += 30
 
+    # Filtrar vivos
     pop_final = [s for s in pop_viva if s['energia'] > 0]
-    
+
+    # Atualizar genes descobertos e contagem
     genes_atuais = set()
     contagem_genes = {}
     for s in pop_final:
@@ -211,114 +229,195 @@ def rodar_turno_servidor():
         for letra in set(c for c in dna_ativo if c.isupper()):
             genes_atuais.add(letra)
             contagem_genes[letra] = contagem_genes.get(letra, 0) + 1
+    estado['genes_descobertos'].update(genes_atuais)
+    estado['genes_extintos'] = estado['genes_descobertos'] - genes_atuais
+    estado['contagem_genes'] = contagem_genes
 
-    novos_genes = genes_atuais - st.session_state.genes_descobertos
-    if novos_genes:
-        st.session_state.genes_descobertos.update(novos_genes)
-    st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
-
+    # Repovoamento emergencial
     if len(pop_final) < 4:
-        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFffddddAARR" if random.random() < 0.5 else "FFffddddTTRR", 'dna_ativo': "", 'geracao': 1, 'raca': "Esporo Primordial"})
+        for _ in range(4 - len(pop_final)):
+            pop_final.append({
+                'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1),
+                'energia': 100, 'dna': "FFffddddAARR" if random.random() < 0.5 else "FFffddddTTRR",
+                'dna_ativo': "", 'geracao': 1, 'raca': "Esporo Primordial"
+            })
 
-    st.session_state.populacao = pop_final
-    st.session_state.mapa = mapa_atual
-    st.session_state.contagem_genes = contagem_genes
+    estado['populacao'] = pop_final
+    estado['mapa'] = mapa_atual
 
+    # Estatísticas para o histórico
     censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0, 'Neutro': 0, 'Anaeróbico': 0}
     for s in pop_final:
         dna_exp = s.get('dna_ativo', s['dna'])
         has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
-        
-        if "R" not in dna_exp: censo['Anaeróbico'] += 1
-        
-        if has_H and has_C: censo['Onívoro'] += 1
-        elif has_C: censo['Carnívoro'] += 1
-        elif has_H: censo['Herbívoro'] += 1
-        elif has_F: censo['Planta'] += 1
-        else: censo['Neutro'] += 1
+        if "R" not in dna_exp:
+            censo['Anaeróbico'] += 1
+        if has_H and has_C:
+            censo['Onívoro'] += 1
+        elif has_C:
+            censo['Carnívoro'] += 1
+        elif has_H:
+            censo['Herbívoro'] += 1
+        elif has_F:
+            censo['Planta'] += 1
+        else:
+            censo['Neutro'] += 1
 
-    st.session_state.historico_populacao.append({
-        'Turno': st.session_state.turno, 'Plantas': censo['Planta'], 
-        'Herbívoros': censo['Herbívoro'], 'Carnívoros': censo['Carnívoro'], 'Onívoros': censo['Onívoro'],
+    estado['historico_populacao'].append({
+        'Turno': estado['turno'],
+        'Plantas': censo['Planta'],
+        'Herbívoros': censo['Herbívoro'],
+        'Carnívoros': censo['Carnívoro'],
+        'Onívoros': censo['Onívoro'],
         'Anaeróbicos': censo['Anaeróbico']
     })
 
-if executando:
-    rodar_turno_servidor()
+    return estado, alertas
 
-# --- RENDERIZAR PAINEL ---
-col_mapa, col_graficos = st.columns([1, 1.2])
-
-with col_mapa:
-    st.subheader(f"📅 Ano {st.session_state.ano} | Dia {st.session_state.dia} ({st.session_state.estacao})")
-    
-    pct_O2 = st.session_state.O2 / 1000.0
-    pct_CO2 = st.session_state.CO2 / 1000.0
-
-    st.markdown(f"**☁️ Composição da Atmosfera**")
-    st.progress(min(1.0, max(0.0, pct_O2 / 35.0)), text=f"Oxigénio (O2): {pct_O2:.2f}%")
-    st.progress(min(1.0, max(0.0, pct_CO2 / 15.0)), text=f"Dióxido de Carbono (CO2): {pct_CO2:.2f}%")
-
+# ------------------ FUNÇÕES DE RENDERIZAÇÃO ------------------
+def renderizar_mapa_html(estado):
+    """Gera o HTML do mapa."""
     tamanho = 15
-    html_grid = "<table style='width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:16px;'>"
+    mapa = estado['mapa']
+    populacao = estado['populacao']
+    # Criar dicionário de posições para acesso rápido
+    pos_to_ser = {(s['x'], s['y']): s for s in populacao}
+
+    html = "<table style='width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:16px;'>"
     for y in range(tamanho):
-        html_grid += "<tr>"
+        html += "<tr>"
         for x in range(tamanho):
-            quad = st.session_state.mapa[y][x]
-            ser_aqui = next((s for s in st.session_state.populacao if s['x'] == x and s['y'] == y), None)
-            
-            if quad['tipo'] == 'Terra': bg_color = "#4a3b2c"
-            elif quad['temperatura'] == 'Frio': bg_color = "#1a3a5c"
-            elif quad['temperatura'] == 'Quente': bg_color = "#1e5e71"
-            else: bg_color = "#124463"
-            
-            if ser_aqui:
-                dna_exp = ser_aqui.get('dna_ativo', ser_aqui['dna'])
+            quad = mapa[y][x]
+            ser = pos_to_ser.get((x, y))
+            # Cor de fundo
+            if quad['tipo'] == 'Terra':
+                bg = "#4a3b2c"
+            else:
+                if quad['temperatura'] == 'Frio':
+                    bg = "#1a3a5c"
+                elif quad['temperatura'] == 'Quente':
+                    bg = "#1e5e71"
+                else:
+                    bg = "#124463"
+
+            # Conteúdo
+            if ser:
+                dna_exp = ser.get('dna_ativo', ser['dna'])
                 has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
-                if has_H and has_C: char, color = 'O', '#ffcc00'
-                elif has_C: char, color = 'C', '#ff3333'
-                elif has_H: char, color = 'H', '#33ff33'
-                elif has_F: char, color = '🟢', '#66ff66'
-                else: char, color = '?', '#cc66ff'
+                if has_H and has_C:
+                    char, color = 'O', '#ffcc00'
+                elif has_C:
+                    char, color = 'C', '#ff3333'
+                elif has_H:
+                    char, color = 'H', '#33ff33'
+                elif has_F:
+                    char, color = '🟢', '#66ff66'
+                else:
+                    char, color = '?', '#cc66ff'
                 conteudo = f"<b style='color:{color};'>{char}</b>"
             elif quad['nutrientes'] > 20:
                 conteudo = "<span style='color:#888888;'>,</span>"
             else:
                 conteudo = "<span style='color:rgba(255,255,255,0.1);'>.</span>"
-                
-            html_grid += f"<td style='background-color:{bg_color}; padding:4px; border:1px solid #222;'>{conteudo}</td>"
-        html_grid += "</tr>"
-    html_grid += "</table>"
-    st.markdown(html_grid, unsafe_allow_html=True)
 
-with col_graficos:
-    total_pop = len(st.session_state.populacao)
-    st.subheader(f"📈 Dinâmica Populacional (Total: {total_pop})")
-    
-    if len(st.session_state.historico_populacao) > 0:
-        df_historico = pd.DataFrame(st.session_state.historico_populacao)
-        st.line_chart(df_historico.set_index('Turno')[['Plantas', 'Herbívoros', 'Carnívoros', 'Anaeróbicos']], height=250)
-    
-    st.subheader("🧬 Laboratório de Genética")
-    col_g1, col_g2 = st.columns(2)
-    
-    with col_g1:
+            html += f"<td style='background-color:{bg}; padding:4px; border:1px solid #222;'>{conteudo}</td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+def renderizar_metricas(estado):
+    """Exibe métricas principais."""
+    col1, col2, col3 = st.columns(3)
+    pct_O2 = estado['O2'] / 1000.0
+    pct_CO2 = estado['CO2'] / 1000.0
+    col1.metric("🌬️ Oxigénio (O2)", f"{pct_O2:.2f}%")
+    col2.metric("🌿 CO2", f"{pct_CO2:.2f}%")
+    col3.metric("👥 População Total", len(estado['populacao']))
+
+def renderizar_grafico(estado):
+    """Exibe o gráfico de população."""
+    if len(estado['historico_populacao']) > 0:
+        df = pd.DataFrame(estado['historico_populacao'])
+        st.line_chart(df.set_index('Turno')[['Plantas', 'Herbívoros', 'Carnívoros', 'Anaeróbicos']], height=250)
+
+def renderizar_geneticas(estado):
+    """Exibe genes e supressões."""
+    col1, col2 = st.columns(2)
+    with col1:
         st.markdown("**Genes Mais Dominantes (%):**")
-        genes_formatados = []
-        genes_ordenados = sorted(st.session_state.contagem_genes.items(), key=lambda x: x[1], reverse=True)
-        for letra, contagem in genes_ordenados[:10]: 
-            pct_gene = (contagem / total_pop) * 100 if total_pop > 0 else 0
-            genes_formatados.append(f"`{letra}`: {pct_gene:.1f}%")
+        total = len(estado['populacao'])
+        genes = sorted(estado['contagem_genes'].items(), key=lambda x: x[1], reverse=True)[:10]
+        if total > 0:
+            genes_formatados = [f"`{g}`: {(c/total)*100:.1f}%" for g, c in genes]
+        else:
+            genes_formatados = ["Nenhum"]
         st.markdown(" | ".join(genes_formatados))
-        
-    with col_g2:
+    with col2:
         st.markdown("**⛔ Regras de Supressão (Epistasia):**")
-        supressoes = [f"`{k}` silencia `{v}`" for k, v in st.session_state.inibicoes.items()]
-        st.info(" | ".join(supressoes))
+        if estado['inibicoes']:
+            supressoes = [f"`{k}` → `{v}`" for k, v in estado['inibicoes'].items()]
+            st.info(" | ".join(supressoes))
+        else:
+            st.info("Nenhuma")
 
-    for alerta in st.session_state.alertas[-3:]:
-        st.caption(f"📜 {alerta}")
+# ------------------ INICIALIZAÇÃO ------------------
+if 'estado' not in st.session_state:
+    st.session_state.estado = inicializar_estado()
+    st.session_state.pausado = False  # controle de pausa
 
-if executando:
+estado = st.session_state.estado
+
+# ------------------ INTERFACE PRINCIPAL ------------------
+st.title("🧬 Projecto Gênesis: Biosfera Avançada")
+
+# Sidebar
+st.sidebar.header("🕹️ Painel de Controlo")
+if st.sidebar.button("▶️ Iniciar" if st.session_state.pausado else "⏸️ Pausar"):
+    st.session_state.pausado = not st.session_state.pausado
+
+velocidade = st.sidebar.slider("Velocidade (seg/ciclo)", 0.1, 2.0, 0.4, step=0.1)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🗺️ Genes Especiais")
+st.sidebar.info("💧 `A` (Água) | ⛰️ `T` (Terra) | 🦅 `P` (Voo) | 🫁 `R` (Resp. Aeróbica)")
+
+# Placeholders para atualização seletiva
+placeholder_mapa = st.empty()
+placeholder_metricas = st.empty()
+placeholder_grafico = st.empty()
+placeholder_geneticas = st.empty()
+placeholder_alertas = st.empty()
+
+# ------------------ LOOP PRINCIPAL (com pausa) ------------------
+if not st.session_state.pausado:
+    estado, novos_alertas = processar_turno(estado)
+    # Atualizar alertas (manter últimos 20)
+    estado['alertas'] = (estado['alertas'] + novos_alertas)[-20:]
+    st.session_state.estado = estado
+
+# Renderização (sempre atualiza, mesmo em pausa)
+with placeholder_mapa.container():
+    st.subheader(f"📅 Ano {estado['ano']} | Dia {estado['dia']} ({estado['estacao']})")
+    st.markdown(renderizar_mapa_html(estado), unsafe_allow_html=True)
+
+with placeholder_metricas.container():
+    renderizar_metricas(estado)
+
+with placeholder_grafico.container():
+    st.subheader("📈 Dinâmica Populacional")
+    renderizar_grafico(estado)
+
+with placeholder_geneticas.container():
+    st.subheader("🧬 Laboratório de Genética")
+    renderizar_geneticas(estado)
+
+with placeholder_alertas.container():
+    if estado['alertas']:
+        st.subheader("📜 Últimos Alertas")
+        for alerta in estado['alertas'][-5:]:
+            st.caption(f"• {alerta}")
+
+# Aguardar e repetir
+if not st.session_state.pausado:
     time.sleep(velocidade)
     st.rerun()

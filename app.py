@@ -1,3 +1,4 @@
+```python
 import streamlit as st
 import pandas as pd
 import random
@@ -8,13 +9,13 @@ st.set_page_config(page_title="Gênesis - Vida Artificial", layout="wide")
 # --- INICIALIZAÇÃO DO SERVIDOR ---
 if 'turno' not in st.session_state:
     st.session_state.turno = 1
+    st.session_state.ciclo_solar = "Dia" # Novo: Controla o Sol
     st.session_state.dia = 1
     st.session_state.ano = 1
-    st.session_state.estacao = "Primavera"
+    st.session_state.estacao = "Verão" # Começa no Verão para estabilizar rápido
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Respiração Celular Universal e Efeito Rubisco ativados."]
+    st.session_state.alertas = ["Gênesis: Ciclo Circadiano (Dia/Noite) e Fisiologia Botânica avançada ativados."]
     
-    # A soma total de gases dinâmicos será sempre 22,000 unidades (22% da atmosfera)
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
     
@@ -47,7 +48,7 @@ if st.session_state.CO2 < 0 or st.session_state.O2 > 100000:
     st.session_state.O2 = 21000.0
     st.session_state.CO2 = 1000.0
 
-st.title("🧬 Projecto Gênesis: Biosfera Avançada")
+st.title("🧬 Projecto Gênesis: Ritmos Biológicos")
 
 st.sidebar.header("🕹️ Painel de Controlo")
 executando = st.sidebar.checkbox("Ativar Simulação", value=True)
@@ -62,17 +63,33 @@ def rodar_turno_servidor():
     tamanho = 15
     st.session_state.turno += 1
     
-    if st.session_state.turno % 10 == 0: st.session_state.dia += 1
-    if st.session_state.dia > 30:
-        st.session_state.dia = 1
-        st.session_state.ano += 1
-        estacoes = ["Primavera", "Verão", "Outono", "Inverno"]
-        st.session_state.estacao = estacoes[st.session_state.ano % 4]
+    # --- NOVO SISTEMA DE CALENDÁRIO (DIA/NOITE) ---
+    if st.session_state.ciclo_solar == "Dia":
+        st.session_state.ciclo_solar = "Noite"
+    else:
+        st.session_state.ciclo_solar = "Dia"
+        st.session_state.dia += 1 # O dia só passa depois de uma noite
+        
+        if st.session_state.dia > 15: # Meses mais curtos para vermos as estações
+            st.session_state.dia = 1
+            st.session_state.ano += 1
+            estacoes = ["Primavera", "Verão", "Outono", "Inverno"]
+            st.session_state.estacao = estacoes[st.session_state.ano % 4]
 
-    ganho_solar = 6.0
-    if st.session_state.estacao == "Inverno": ganho_solar = 3.0
-    if st.session_state.estacao == "Verão": ganho_solar = 9.0
-    if st.session_state.CO2 > 5000: ganho_solar += 2.0 
+    # --- LÓGICA DE FOTOSSÍNTESE BASEADA NA SUA FÓRMULA ---
+    eh_dia = st.session_state.ciclo_solar == "Dia"
+    unidade_resp = 0.5 # A respiração base é 0.5 O2
+    
+    multiplicador_foto = 0
+    if eh_dia:
+        if st.session_state.estacao in ["Verão", "Primavera"]:
+            multiplicador_foto = random.uniform(5.0, 15.0) # 5 a 15x maior que a respiração
+        else: # Outono / Inverno
+            multiplicador_foto = random.uniform(1.0, 4.0)  # 1 a 4x maior que a respiração
+            
+    # Bónus extra de CO2 (Efeito Estufa)
+    if st.session_state.CO2 > 3000 and eh_dia: 
+        multiplicador_foto += 2.0
     
     novos_nascidos = []
     pop_atual = st.session_state.populacao
@@ -95,86 +112,92 @@ def rodar_turno_servidor():
         has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
         has_R = "R" in dna_ativo 
         
-        custo = 1.5 + (len(dna_base) * 0.05)
-        if quad['temperatura'] == 'Frio': custo += 1.5
-        if has_P: custo += 2.0 
-        if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 4.0 
-        if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 4.0 
+        # O Custo base de manter o corpo vivo
+        custo = 1.0 + (len(dna_base) * 0.02)
+        if quad['temperatura'] == 'Frio': custo += 1.0
+        if has_P: custo += 1.5 
+        if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 3.0 
+        if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 3.0 
+        
+        # Animais são menos ativos à noite
+        passos_base = 1 if eh_dia else (0 if random.random() < 0.5 else 1)
 
-        passos_base = 1
-
-        # --- NOVA MECÂNICA: RESPIRAÇÃO CELULAR UNIVERSAL ---
+        # --- RESPIRAÇÃO (Acontece SEMPRE) ---
         if has_R:
-            # Animais gastam muito O2 (1.5), Plantas gastam pouco (0.5) para manter os tecidos vivos
-            taxa_respiracao = 1.5 if (has_H or has_C) else 0.5 
+            # Animais gastam 2 unidades_resp (1.0 O2), Plantas gastam 1 unidade_resp (0.5 O2)
+            consumo_o2 = (unidade_resp * 2) if (has_H or has_C) else unidade_resp 
             
-            if st.session_state.O2 >= taxa_respiracao:
-                st.session_state.O2 -= taxa_respiracao
-                st.session_state.CO2 += taxa_respiracao
+            # Animais abrandam no inverno
+            if st.session_state.estacao == "Inverno" and (has_H or has_C):
+                consumo_o2 *= 0.8
+            
+            if st.session_state.O2 >= consumo_o2:
+                st.session_state.O2 -= consumo_o2
+                st.session_state.CO2 += consumo_o2
             else:
-                ser['energia'] -= 4.0
+                ser['energia'] -= 5.0 # Asfixia aeróbica
                 passos_base = 0 
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: O2 insuficiente! Asfixia Aeróbica.")
         else:
-            # Ser Anaeróbico (Sem gene R). Se o O2 passar de 5%, começam a morrer de toxicidade
             if st.session_state.O2 > 5000.0: 
-                ser['energia'] -= 5.0
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: Toxicidade de O2 a queimar seres anaeróbicos!")
+                ser['energia'] -= 3.0 # Toxicidade
 
-        # --- NOVA MECÂNICA: FOTOSSÍNTESE E EFEITO RUBISCO ---
+        # --- FOTOSSÍNTESE (Apenas de Dia para plantas F) ---
         if has_F:
-            # Fotorrespiração: Se o O2 chegar aos 21.8%, as plantas "engasgam-se" com o oxigénio.
-            if has_R and st.session_state.O2 > 21800.0:
-                ser['energia'] -= 1.5 # Perde energia sem produzir O2
-                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: O2 a 21.8%! Plantas entram em Fotorrespiração.")
-            else:
-                # Fotossíntese normal: Consome 2.0 CO2 e liberta 2.0 O2
-                if st.session_state.CO2 >= 2.0:
-                    st.session_state.CO2 -= 2.0
-                    st.session_state.O2 += 2.0
-                    ser['energia'] += ganho_solar if quad['tipo'] == 'Água' else ganho_solar * 0.6
+            if eh_dia:
+                consumo_co2_foto = unidade_resp * multiplicador_foto
+                
+                if st.session_state.CO2 >= consumo_co2_foto:
+                    st.session_state.CO2 -= consumo_co2_foto
+                    st.session_state.O2 += consumo_co2_foto
+                    # Ganho de energia calórico para a planta (proporcional ao CO2)
+                    ganho = (consumo_co2_foto * 1.5) if quad['tipo'] == 'Água' else (consumo_co2_foto * 0.8)
+                    ser['energia'] += ganho
                 else:
-                    ser['energia'] -= 2.0 
-                    if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: Fome de Carbono (Plantas a sufocar)!")
+                    ser['energia'] -= 1.0 # Leve stress por falta de CO2 (não morre rápido, só não cresce)
+            else:
+                # À NOITE: Não ganham energia, só gastam com a respiração e manutenção
+                ser['energia'] -= 1.0
+
+            # Fotorrespiração (Sobrecarga de O2)
+            if has_R and st.session_state.O2 > 21800.0 and eh_dia:
+                ser['energia'] -= 2.0 
 
         ser['energia'] -= custo
 
         if "D" in dna_ativo and quad['nutrientes'] > 0:
             abs_nutri = min(quad['nutrientes'], 15)
             quad['nutrientes'] -= abs_nutri
-            ser['energia'] += abs_nutri * 1.2
-            # Decomposição liberta algum CO2 extra!
+            ser['energia'] += abs_nutri * 1.5
             if st.session_state.O2 >= 1.0:
                 st.session_state.O2 -= 1.0
                 st.session_state.CO2 += 1.0
 
         passos = passos_base + (1 if has_P else 0)
-        if random.random() < 0.75:
+        if passos > 0 and random.random() < 0.75:
             for _ in range(passos):
                 ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
                 ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
 
-        limite_mitose = 130 if (has_F and st.session_state.CO2 > 5000) else 160
+        # Custo calórico de reprodução mais realista
+        limite_mitose = 150 
         if ser['energia'] >= limite_mitose:
-            ser['energia'] = 60
+            ser['energia'] = 70
             letras = list(dna_base)
             
-            if random.random() < 0.35:
-                if random.random() < 0.5: 
+            if random.random() < 0.25:
+                if random.random() < 0.4: 
                     nova_letra = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
                     letras.append(nova_letra)
-                    
                     if nova_letra.isupper() and nova_letra not in st.session_state.genes_descobertos and random.random() < 0.10:
                         alvo = random.choice([g for g in st.session_state.genes_descobertos if g.isupper()])
                         if nova_letra != alvo:
                             st.session_state.inibicoes[nova_letra] = alvo
-                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! Gene [{nova_letra}] inativa [{alvo}]!")
-
+                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! [{nova_letra}] inativa [{alvo}]!")
                 else: 
-                    if len(letras) > 3: letras.pop(random.randint(0, len(letras)-1))
+                    if len(letras) > 4: letras.pop(random.randint(0, len(letras)-1))
             
             novos_nascidos.append({
-                'x': ser['x'], 'y': ser['y'], 'energia': 60, 'dna': "".join(letras), 'dna_ativo': "",
+                'x': ser['x'], 'y': ser['y'], 'energia': 70, 'dna': "".join(letras), 'dna_ativo': "",
                 'geracao': ser['geracao'] + 1, 'raca': ser['raca']
             })
 
@@ -198,11 +221,11 @@ def rodar_turno_servidor():
                 if has_Ca and not has_Fb:
                     b['energia'] = 0
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 15
-                    a['energia'] = min(200, a['energia'] + 50)
+                    a['energia'] = min(220, a['energia'] + 50)
                 elif has_Ha and has_Fb:
                     b['energia'] = 0
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 10
-                    a['energia'] = min(200, a['energia'] + 40)
+                    a['energia'] = min(220, a['energia'] + 35)
 
     for s in pop_atual:
         if s['energia'] <= 0:
@@ -224,13 +247,13 @@ def rodar_turno_servidor():
     st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
 
     if len(pop_final) < 4:
-        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFffddddAARR" if random.random() < 0.5 else "FFffddddTTRR", 'dna_ativo': "", 'geracao': 1, 'raca': "Esporo Primordial"})
+        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Esporo"})
 
     st.session_state.populacao = pop_final
     st.session_state.mapa = mapa_atual
     st.session_state.contagem_genes = contagem_genes
 
-    censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0, 'Neutro': 0, 'Anaeróbico': 0}
+    censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0, 'Anaeróbico': 0}
     for s in pop_final:
         dna_exp = s.get('dna_ativo', s['dna'])
         has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
@@ -241,7 +264,6 @@ def rodar_turno_servidor():
         elif has_C: censo['Carnívoro'] += 1
         elif has_H: censo['Herbívoro'] += 1
         elif has_F: censo['Planta'] += 1
-        else: censo['Neutro'] += 1
 
     st.session_state.historico_populacao.append({
         'Turno': st.session_state.turno, 'Plantas': censo['Planta'], 
@@ -256,17 +278,21 @@ if executando:
 col_mapa, col_graficos = st.columns([1, 1.2])
 
 with col_mapa:
-    st.subheader(f"📅 Ano {st.session_state.ano} | Dia {st.session_state.dia} ({st.session_state.estacao})")
+    icone_sol = "☀️ Dia" if st.session_state.ciclo_solar == "Dia" else "🌙 Noite"
+    st.subheader(f"📅 {icone_sol} | Ano {st.session_state.ano} | Dia {st.session_state.dia} ({st.session_state.estacao})")
     
     pct_O2 = st.session_state.O2 / 1000.0
     pct_CO2 = st.session_state.CO2 / 1000.0
 
-    st.markdown(f"**☁️ Composição da Atmosfera**")
-    st.progress(min(1.0, max(0.0, pct_O2 / 25.0)), text=f"Oxigénio (O2): {pct_O2:.2f}% (Máx Real: 22%)")
+    st.markdown(f"**☁️ Atmosfera (O2 Consumido de Noite!)**")
+    st.progress(min(1.0, max(0.0, pct_O2 / 25.0)), text=f"Oxigénio (O2): {pct_O2:.2f}% (Máx: 22%)")
     st.progress(min(1.0, max(0.0, pct_CO2 / 15.0)), text=f"Dióxido de Carbono (CO2): {pct_CO2:.2f}%")
 
+    # Escurece o mapa à noite com CSS
+    brilho_mapa = "1.0" if st.session_state.ciclo_solar == "Dia" else "0.6"
+    
     tamanho = 15
-    html_grid = "<table style='width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:16px;'>"
+    html_grid = f"<table style='width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:16px; filter: brightness({brilho_mapa});'>"
     for y in range(tamanho):
         html_grid += "<tr>"
         for x in range(tamanho):
@@ -328,3 +354,5 @@ with col_graficos:
 if executando:
     time.sleep(velocidade)
     st.rerun()
+
+```

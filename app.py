@@ -5,14 +5,12 @@ import time
 
 st.set_page_config(page_title="Gênesis - Vida Artificial", layout="wide")
 
-# --- LISTAS DE CALENDÁRIO ---
 MESES = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ]
 
 def obter_estacao(mes_idx):
-    # Hemisfério Sul
     if mes_idx in [11, 0, 1]: return "Verão"
     if mes_idx in [2, 3, 4]: return "Outono"
     if mes_idx in [5, 6, 7]: return "Inverno"
@@ -22,11 +20,11 @@ def obter_estacao(mes_idx):
 if 'turno' not in st.session_state:
     st.session_state.turno = 1
     st.session_state.ciclo_solar = "Dia" 
-    st.session_state.mes_atual_idx = 0 # 0 = Janeiro
+    st.session_state.mes_atual_idx = 0 
     st.session_state.ano = 1
     st.session_state.estacao = obter_estacao(0)
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Calendário Mensal e Estações do Hemisfério Sul ativados."]
+    st.session_state.alertas = ["Gênesis: Reprodução explosiva de Plantas ativada!"]
     
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
@@ -59,7 +57,7 @@ if 'turno' not in st.session_state:
         x, y = random.choice(coords_agua)
         populacao.append({
             'x': x, 'y': y, 'idade': random.randint(0, 10), 
-            'energia': 120, 'dna': "FFffddddAARR",
+            'energia': 100, 'dna': "FFffddddAARR",
             'dna_ativo': "", 'geracao': 1, 'raca': "Alga Primordial"
         })
 
@@ -67,7 +65,7 @@ if 'turno' not in st.session_state:
         x, y = random.choice(coords_agua)
         populacao.append({
             'x': x, 'y': y, 'idade': random.randint(0, 5),
-            'energia': 150, 'dna': "HHffddddAARR",
+            'energia': 140, 'dna': "HHffddddAARR",
             'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"
         })
         
@@ -92,15 +90,14 @@ def rodar_turno_servidor():
     tamanho = 15
     st.session_state.turno += 1
     
-    # --- NOVO CALENDÁRIO ---
     if st.session_state.ciclo_solar == "Dia":
         st.session_state.ciclo_solar = "Noite"
     else:
         st.session_state.ciclo_solar = "Dia"
         st.session_state.mes_atual_idx += 1 
         
-        if st.session_state.mes_atual_idx > 11: # Passou de Dezembro
-            st.session_state.mes_atual_idx = 0  # Volta a Janeiro
+        if st.session_state.mes_atual_idx > 11: 
+            st.session_state.mes_atual_idx = 0  
             st.session_state.ano += 1
             
         st.session_state.estacao = obter_estacao(st.session_state.mes_atual_idx)
@@ -212,15 +209,15 @@ def rodar_turno_servidor():
                 ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
                 ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
 
-        # --- LIMITES DINÂMICOS DE REPRODUÇÃO ---
-        if is_onivoro: limite_mitose = 150
-        elif is_carnivoro: limite_mitose = 180  
-        elif is_herbivoro: limite_mitose = 130
-        elif is_planta: limite_mitose = 110     
-        else: limite_mitose = 150
+        # --- LIMITES DINÂMICOS DE REPRODUÇÃO (Plantas super-rápidas) ---
+        if is_onivoro: limite_mitose, energia_pos = 150, 70
+        elif is_carnivoro: limite_mitose, energia_pos = 180, 80
+        elif is_herbivoro: limite_mitose, energia_pos = 130, 60
+        elif is_planta: limite_mitose, energia_pos = 90, 40 # 🟢 Reprodução explosiva aos 90!
+        else: limite_mitose, energia_pos = 140, 65
         
         if ser['energia'] >= limite_mitose:
-            ser['energia'] = 70
+            ser['energia'] = energia_pos
             letras = list(dna_base)
             
             if random.random() < 0.25:
@@ -236,7 +233,7 @@ def rodar_turno_servidor():
                     if len(letras) > 4: letras.pop(random.randint(0, len(letras)-1))
             
             novos_nascidos.append({
-                'x': ser['x'], 'y': ser['y'], 'idade': 0, 'energia': 70, 
+                'x': ser['x'], 'y': ser['y'], 'idade': 0, 'energia': energia_pos, 
                 'dna': "".join(letras), 'dna_ativo': "",
                 'geracao': ser['geracao'] + 1, 'raca': ser['raca']
             })

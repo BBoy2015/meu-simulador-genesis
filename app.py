@@ -24,7 +24,7 @@ if 'turno' not in st.session_state:
     st.session_state.ano = 1
     st.session_state.estacao = obter_estacao(0)
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Super Fotossíntese ativada. A flora recupera a um ritmo alucinante!"]
+    st.session_state.alertas = ["Gênesis: Gestação realista para Predadores (6 a 12 meses)."]
     
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
@@ -171,15 +171,13 @@ def rodar_turno_servidor():
         else:
             if st.session_state.O2 > 5000.0: ser['energia'] -= 3.0 
 
-        # Fotossíntese (Buff Massivo de Recuperação)
+        # Fotossíntese
         if has_F:
             if eh_dia:
                 consumo_co2_foto = unidade_resp * multiplicador_foto
                 if st.session_state.CO2 >= consumo_co2_foto:
                     st.session_state.CO2 -= consumo_co2_foto
                     st.session_state.O2 += consumo_co2_foto
-                    
-                    # BUFF: Ganho de energia brutal durante o dia (recuperam muito rápido)
                     ganho = (consumo_co2_foto * 4.0) if quad['tipo'] == 'Água' else (consumo_co2_foto * 2.5)
                     ser['energia'] += ganho
                 else: ser['energia'] -= 1.0 
@@ -208,7 +206,6 @@ def rodar_turno_servidor():
         elif is_herbivoro: limite_mitose = 150 
         else: limite_mitose = 170
         
-        # Limite máximo absoluto de energia para não transbordar dados
         if ser['energia'] > 300: ser['energia'] = 300
         
         if ser['energia'] >= limite_mitose and ser['cooldown_rep'] == 0:
@@ -230,17 +227,18 @@ def rodar_turno_servidor():
             num_filhos = 1
             if is_planta: 
                 num_filhos = 3 if total_pop_atual < 700 else 1 
-                ser['cooldown_rep'] = 2 
+                ser['cooldown_rep'] = 2 # 1 mês
                 energia_herdeiro = 30
                 ser['energia'] = 40
             elif is_herbivoro:
                 num_filhos = 1 
-                ser['cooldown_rep'] = 4 
+                ser['cooldown_rep'] = 4 # 2 meses
                 energia_herdeiro = 50
                 ser['energia'] = 50
             elif is_carnivoro or is_onivoro:
                 num_filhos = 1
-                ser['cooldown_rep'] = random.randint(6, 12)
+                # 1 Mês = 2 Turnos. 6 a 12 meses = 12 a 24 turnos!
+                ser['cooldown_rep'] = random.randint(12, 24) 
                 energia_herdeiro = 80
                 ser['energia'] = 80
             else:
@@ -263,7 +261,6 @@ def rodar_turno_servidor():
         if pos not in posicoes: posicoes[pos] = []
         posicoes[pos].append(s)
 
-    # --- PREDADORISMO E REGENERAÇÃO FORTE ---
     for pos, seres_aqui in posicoes.items():
         if len(seres_aqui) < 2: continue
         for a in seres_aqui:
@@ -275,14 +272,12 @@ def rodar_turno_servidor():
                 has_Fa, has_Ha, has_Ca = "F" in dna_a, "H" in dna_a, "C" in dna_a
                 has_Fb = "F" in dna_b
                 
-                # Carnívoro come animal
                 if has_Ca and not has_Fb:
                     b['energia'] = 0 
                     a['energia'] = min(300, a['energia'] + 80)
                     a['cooldown_dig'] = 3 
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 10
                     
-                # Herbívoro come Planta
                 elif has_Ha and has_Fb:
                     a['energia'] = min(300, a['energia'] + 50)
                     a['cooldown_dig'] = 4 

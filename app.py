@@ -5,15 +5,28 @@ import time
 
 st.set_page_config(page_title="Gênesis - Vida Artificial", layout="wide")
 
+# --- LISTAS DE CALENDÁRIO ---
+MESES = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+]
+
+def obter_estacao(mes_idx):
+    # Hemisfério Sul
+    if mes_idx in [11, 0, 1]: return "Verão"
+    if mes_idx in [2, 3, 4]: return "Outono"
+    if mes_idx in [5, 6, 7]: return "Inverno"
+    if mes_idx in [8, 9, 10]: return "Primavera"
+
 # --- INICIALIZAÇÃO DO SERVIDOR ---
 if 'turno' not in st.session_state:
     st.session_state.turno = 1
     st.session_state.ciclo_solar = "Dia" 
-    st.session_state.dia = 1
+    st.session_state.mes_atual_idx = 0 # 0 = Janeiro
     st.session_state.ano = 1
-    st.session_state.estacao = "Verão" 
+    st.session_state.estacao = obter_estacao(0)
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: A vida começou nos oceanos (80% Algas / 20% Proto-Peixes)."]
+    st.session_state.alertas = ["Gênesis: Calendário Mensal e Estações do Hemisfério Sul ativados."]
     
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
@@ -22,7 +35,6 @@ if 'turno' not in st.session_state:
     st.session_state.genes_extintos = set()
     st.session_state.inibicoes = {'H': 'F', 'C': 'F'}
 
-    # 1. GERAR O MAPA PRIMEIRO (Para sabermos onde está a água)
     tamanho = 15
     mapa = []
     coords_agua = []
@@ -38,25 +50,24 @@ if 'turno' not in st.session_state:
         mapa.append(linha)
     st.session_state.mapa = mapa
 
-    # 2. ORIGEM DA VIDA: 80% Plantas Aquáticas (Algas), 20% Animais Aquáticos (Proto-Peixes)
     populacao = []
     total_inicial = 30
-    num_plantas = int(total_inicial * 0.8) # 24 Plantas
-    num_animais = total_inicial - num_plantas # 6 Herbívoros
+    num_plantas = int(total_inicial * 0.8) 
+    num_animais = total_inicial - num_plantas 
 
     for _ in range(num_plantas):
-        x, y = random.choice(coords_agua) # Nascem ESTRITAMENTE na água
+        x, y = random.choice(coords_agua)
         populacao.append({
-            'x': x, 'y': y,
-            'energia': 120, 'dna': "FFffddddAARR", # F (Foto), A (Água), R (Respira)
+            'x': x, 'y': y, 'idade': random.randint(0, 10), 
+            'energia': 120, 'dna': "FFffddddAARR",
             'dna_ativo': "", 'geracao': 1, 'raca': "Alga Primordial"
         })
 
     for _ in range(num_animais):
-        x, y = random.choice(coords_agua) # Nascem ESTRITAMENTE na água
+        x, y = random.choice(coords_agua)
         populacao.append({
-            'x': x, 'y': y,
-            'energia': 150, 'dna': "HHffddddAARR", # H (Herbívoro), A (Água), R (Respira)
+            'x': x, 'y': y, 'idade': random.randint(0, 5),
+            'energia': 150, 'dna': "HHffddddAARR",
             'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"
         })
         
@@ -81,18 +92,18 @@ def rodar_turno_servidor():
     tamanho = 15
     st.session_state.turno += 1
     
-    # --- SISTEMA DE CALENDÁRIO (DIA/NOITE) ---
+    # --- NOVO CALENDÁRIO ---
     if st.session_state.ciclo_solar == "Dia":
         st.session_state.ciclo_solar = "Noite"
     else:
         st.session_state.ciclo_solar = "Dia"
-        st.session_state.dia += 1 
+        st.session_state.mes_atual_idx += 1 
         
-        if st.session_state.dia > 15: 
-            st.session_state.dia = 1
+        if st.session_state.mes_atual_idx > 11: # Passou de Dezembro
+            st.session_state.mes_atual_idx = 0  # Volta a Janeiro
             st.session_state.ano += 1
-            estacoes = ["Primavera", "Verão", "Outono", "Inverno"]
-            st.session_state.estacao = estacoes[st.session_state.ano % 4]
+            
+        st.session_state.estacao = obter_estacao(st.session_state.mes_atual_idx)
 
     eh_dia = st.session_state.ciclo_solar == "Dia"
     unidade_resp = 0.5 
@@ -114,6 +125,8 @@ def rodar_turno_servidor():
     for ser in pop_atual:
         if ser['energia'] <= 0: continue
         
+        ser['idade'] += 1 
+        
         quad = mapa_atual[ser['y']][ser['x']]
         dna_base = ser['dna'] 
         
@@ -128,6 +141,22 @@ def rodar_turno_servidor():
         has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
         has_R = "R" in dna_ativo 
         
+        # --- TEORIA DA SELEÇÃO E EXPECTATIVA DE VIDA ---
+        is_onivoro = has_H and has_C
+        is_carnivoro = has_C and not has_H
+        is_herbivoro = has_H and not has_C
+        is_planta = has_F
+        
+        if is_onivoro: max_idade = 40
+        elif is_carnivoro: max_idade = 30
+        elif is_herbivoro: max_idade = 50
+        elif is_planta: max_idade = 80
+        else: max_idade = 20 
+        
+        if ser['idade'] >= max_idade:
+            ser['energia'] = 0
+            continue
+
         custo = 1.0 + (len(dna_base) * 0.02)
         if quad['temperatura'] == 'Frio': custo += 1.0
         if has_P: custo += 1.5 
@@ -139,9 +168,7 @@ def rodar_turno_servidor():
         # --- RESPIRAÇÃO ---
         if has_R:
             consumo_o2 = (unidade_resp * 2) if (has_H or has_C) else unidade_resp 
-            
-            if st.session_state.estacao == "Inverno" and (has_H or has_C):
-                consumo_o2 *= 0.8
+            if st.session_state.estacao == "Inverno" and (has_H or has_C): consumo_o2 *= 0.8
             
             if st.session_state.O2 >= consumo_o2:
                 st.session_state.O2 -= consumo_o2
@@ -150,14 +177,12 @@ def rodar_turno_servidor():
                 ser['energia'] -= 5.0 
                 passos_base = 0 
         else:
-            if st.session_state.O2 > 5000.0: 
-                ser['energia'] -= 3.0 
+            if st.session_state.O2 > 5000.0: ser['energia'] -= 3.0 
 
         # --- FOTOSSÍNTESE ---
         if has_F:
             if eh_dia:
                 consumo_co2_foto = unidade_resp * multiplicador_foto
-                
                 if st.session_state.CO2 >= consumo_co2_foto:
                     st.session_state.CO2 -= consumo_co2_foto
                     st.session_state.O2 += consumo_co2_foto
@@ -187,7 +212,13 @@ def rodar_turno_servidor():
                 ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
                 ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
 
-        limite_mitose = 150 
+        # --- LIMITES DINÂMICOS DE REPRODUÇÃO ---
+        if is_onivoro: limite_mitose = 150
+        elif is_carnivoro: limite_mitose = 180  
+        elif is_herbivoro: limite_mitose = 130
+        elif is_planta: limite_mitose = 110     
+        else: limite_mitose = 150
+        
         if ser['energia'] >= limite_mitose:
             ser['energia'] = 70
             letras = list(dna_base)
@@ -205,7 +236,8 @@ def rodar_turno_servidor():
                     if len(letras) > 4: letras.pop(random.randint(0, len(letras)-1))
             
             novos_nascidos.append({
-                'x': ser['x'], 'y': ser['y'], 'energia': 70, 'dna': "".join(letras), 'dna_ativo': "",
+                'x': ser['x'], 'y': ser['y'], 'idade': 0, 'energia': 70, 
+                'dna': "".join(letras), 'dna_ativo': "",
                 'geracao': ser['geracao'] + 1, 'raca': ser['raca']
             })
 
@@ -227,13 +259,13 @@ def rodar_turno_servidor():
                 has_Fb = "F" in dna_b
                 
                 if has_Ca and not has_Fb:
-                    b['energia'] = 0
+                    b['energia'] = 0 
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 15
-                    a['energia'] = min(220, a['energia'] + 50)
+                    a['energia'] = min(220, a['energia'] + 60)
                 elif has_Ha and has_Fb:
-                    b['energia'] = 0
+                    b['energia'] = 0 
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 10
-                    a['energia'] = min(220, a['energia'] + 35)
+                    a['energia'] = min(220, a['energia'] + 40)
 
     for s in pop_atual:
         if s['energia'] <= 0:
@@ -254,16 +286,14 @@ def rodar_turno_servidor():
         st.session_state.genes_descobertos.update(novos_genes)
     st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
 
-    # SALVAGUARDA DE EXTINÇÃO: Insere esporos aquáticos
     if len(pop_final) < 4:
         coords_agua = [(x, y) for y in range(tamanho) for x in range(tamanho) if mapa_atual[y][x]['tipo'] == 'Água']
-        if not coords_agua: coords_agua = [(tamanho//2, tamanho//2)] # Fallback
+        if not coords_agua: coords_agua = [(tamanho//2, tamanho//2)] 
         
-        # Gera uma Alga e um Proto-Peixe para reiniciar o ciclo
         x1, y1 = random.choice(coords_agua)
         x2, y2 = random.choice(coords_agua)
-        pop_final.append({'x': x1, 'y': y1, 'energia': 100, 'dna': "FFffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Alga"})
-        pop_final.append({'x': x2, 'y': y2, 'energia': 100, 'dna': "HHffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"})
+        pop_final.append({'x': x1, 'y': y1, 'idade': 0, 'energia': 100, 'dna': "FFffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Alga"})
+        pop_final.append({'x': x2, 'y': y2, 'idade': 0, 'energia': 100, 'dna': "HHffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"})
 
     st.session_state.populacao = pop_final
     st.session_state.mapa = mapa_atual
@@ -294,13 +324,15 @@ if executando:
 col_mapa, col_graficos = st.columns([1, 1.2])
 
 with col_mapa:
-    icone_sol = "☀️ Dia" if st.session_state.ciclo_solar == "Dia" else "🌙 Noite"
-    st.subheader(f"📅 {icone_sol} | Ano {st.session_state.ano} | Dia {st.session_state.dia} ({st.session_state.estacao})")
+    icone_sol = "☀️ Dia de" if st.session_state.ciclo_solar == "Dia" else "🌙 Noite de"
+    mes_nome = MESES[st.session_state.mes_atual_idx]
+    
+    st.subheader(f"📅 Ano {st.session_state.ano} | {icone_sol} {mes_nome} ({st.session_state.estacao})")
     
     pct_O2 = st.session_state.O2 / 1000.0
     pct_CO2 = st.session_state.CO2 / 1000.0
 
-    st.markdown(f"**☁️ Atmosfera (O2 Consumido de Noite!)**")
+    st.markdown(f"**☁️ Atmosfera Planetária**")
     st.progress(min(1.0, max(0.0, pct_O2 / 25.0)), text=f"Oxigénio (O2): {pct_O2:.2f}% (Máx: 22%)")
     st.progress(min(1.0, max(0.0, pct_CO2 / 15.0)), text=f"Dióxido de Carbono (CO2): {pct_CO2:.2f}%")
 
@@ -322,12 +354,15 @@ with col_mapa:
             if ser_aqui:
                 dna_exp = ser_aqui.get('dna_ativo', ser_aqui['dna'])
                 has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
+                
+                opacidade = "0.4" if ser_aqui['idade'] > 40 else "1.0"
+
                 if has_H and has_C: char, color = 'O', '#ffcc00'
                 elif has_C: char, color = 'C', '#ff3333'
                 elif has_H: char, color = 'H', '#33ff33'
                 elif has_F: char, color = '🟢', '#66ff66'
                 else: char, color = '?', '#cc66ff'
-                conteudo = f"<b style='color:{color};'>{char}</b>"
+                conteudo = f"<b style='color:{color}; opacity:{opacidade};'>{char}</b>"
             elif quad['nutrientes'] > 20:
                 conteudo = "<span style='color:#888888;'>,</span>"
             else:

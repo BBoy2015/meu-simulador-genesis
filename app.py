@@ -12,15 +12,16 @@ if 'turno' not in st.session_state:
     st.session_state.ano = 1
     st.session_state.estacao = "Primavera"
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Atmosfera e Genética Avançada ativadas."]
+    st.session_state.alertas = ["Gênesis: Epistasia e Leis de Supressão Ativadas."]
     
-    # Atmosfera Global Inicial
-    st.session_state.O2 = 10000.0
-    st.session_state.CO2 = 5000.0
+    st.session_state.O2 = 21000.0  
+    st.session_state.CO2 = 1000.0  
     
-    # Memória Genética
     st.session_state.genes_descobertos = set(["F", "H", "C", "D", "A", "T"])
     st.session_state.genes_extintos = set()
+    
+    # REGRAS DE EPISTASIA INICIAIS (Quem inativa quem)
+    st.session_state.inibicoes = {'H': 'F', 'C': 'F'}
 
     tamanho = 15
     mapa = []
@@ -34,15 +35,18 @@ if 'turno' not in st.session_state:
         mapa.append(linha)
     st.session_state.mapa = mapa
 
-    # Criar 25 seres: Maioria Aquática (A), alguns Terrestres (T)
     populacao = []
     for _ in range(25):
         populacao.append({
             'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1),
             'energia': 100, 'dna': "FFhhccddAA" if random.random() < 0.7 else "FFhhccddTT",
-            'geracao': 1, 'raca': "Primitiva"
+            'dna_ativo': "", 'geracao': 1, 'raca': "Primitiva"
         })
     st.session_state.populacao = populacao
+
+if st.session_state.CO2 < 0 or st.session_state.O2 > 100000:
+    st.session_state.O2 = 21000.0
+    st.session_state.CO2 = 1000.0
 
 st.title("🧬 Projecto Gênesis: Biosfera Avançada")
 
@@ -54,7 +58,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("🗺️ Novos Genes de Habitat")
 st.sidebar.info("💧 `A` (Aquático) | ⛰️ `T` (Terrestre) | 🦅 `P` (Alado/Pássaro)")
 
-# --- MOTOR DO JOGO OTIMIZADO ---
+# --- MOTOR DO JOGO ---
 def rodar_turno_servidor():
     tamanho = 15
     st.session_state.turno += 1
@@ -69,83 +73,97 @@ def rodar_turno_servidor():
     ganho_solar = 6.0
     if st.session_state.estacao == "Inverno": ganho_solar = 3.0
     if st.session_state.estacao == "Verão": ganho_solar = 9.0
-
-    # Bónus de CO2 para Plantas
-    if st.session_state.CO2 > 8000: ganho_solar += 3.0 
+    if st.session_state.CO2 > 5000: ganho_solar += 2.0 
     
     novos_nascidos = []
     pop_atual = st.session_state.populacao
     mapa_atual = st.session_state.mapa
 
-    # Processar Ciclo de Vida Individual
     for ser in pop_atual:
         if ser['energia'] <= 0: continue
         
         quad = mapa_atual[ser['y']][ser['x']]
-        dna = ser['dna']
+        dna_base = ser['dna'].upper()
         
-        # Leitura de Genes
-        has_F, has_H, has_C = "F" in dna, "H" in dna, "C" in dna
-        has_A = "A" in dna # Aquático
-        has_T = "T" in dna # Terrestre
-        has_P = "P" in dna # Alado/Voador
+        # 1. PROCESSAR EPISTASIA (MASCARAR GENES)
+        dna_ativo = dna_base
+        for supressor, alvo in st.session_state.inibicoes.items():
+            if supressor in dna_ativo:
+                dna_ativo = dna_ativo.replace(alvo, "") # Remove o gene alvo da expressão
         
-        # Custo Metabólico Base
-        custo = 1.5 + (len(dna) * 0.05)
+        ser['dna_ativo'] = dna_ativo # Guarda o DNA que realmente funciona para usar no render
+        
+        has_F, has_H, has_C = "F" in dna_ativo, "H" in dna_ativo, "C" in dna_ativo
+        has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
+        
+        custo = 1.5 + (len(dna_base) * 0.05)
         if quad['temperatura'] == 'Frio': custo += 1.5
-        if has_P: custo += 2.0 # Voar gasta muita energia
-        
-        # Penalidade de Habitat
-        if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 4.0 # Asfixia na terra
-        if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 4.0 # Afogamento na água
+        if has_P: custo += 2.0 
+        if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 4.0 
+        if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 4.0 
+        if (has_H or has_C) and st.session_state.CO2 > 10000.0: custo += 1.5
 
-        # Penalidade de O2 para animais
-        if (has_H or has_C) and st.session_state.O2 < 2000:
-            custo += 2.0 # Asfixia global
-            passos_base = 0 # Ficam lentos
-        else:
-            passos_base = 1
+        passos_base = 1
+
+        if has_F:
+            if st.session_state.CO2 >= 1.0:
+                st.session_state.CO2 -= 1.0
+                st.session_state.O2 += 1.0
+                ser['energia'] += ganho_solar if quad['tipo'] == 'Água' else ganho_solar * 0.6
+            else:
+                ser['energia'] -= 2.0 
+                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: COLAPSO - Plantas sem CO2!")
+
+        if has_H or has_C:
+            if st.session_state.O2 >= 1.0:
+                st.session_state.O2 -= 1.0
+                st.session_state.CO2 += 1.0
+            else:
+                ser['energia'] -= 5.0 
+                passos_base = 0 
+                if random.random() < 0.005: st.session_state.alertas.append(f"T{st.session_state.turno}: COLAPSO - Animais sem O2!")
 
         ser['energia'] -= custo
 
-        # Trocas Gasosas e Alimentação
-        if has_F:
-            ser['energia'] += ganho_solar if quad['tipo'] == 'Água' else ganho_solar * 0.6
-            st.session_state.O2 += 2.5
-            st.session_state.CO2 -= 1.5
-        if has_H or has_C:
-            st.session_state.O2 -= 1.0
-            st.session_state.CO2 += 1.5
-
-        if "D" in dna and quad['nutrientes'] > 0:
+        if "D" in dna_ativo and quad['nutrientes'] > 0:
             abs_nutri = min(quad['nutrientes'], 15)
             quad['nutrientes'] -= abs_nutri
             ser['energia'] += abs_nutri * 1.2
 
-        # Movimento
         passos = passos_base + (1 if has_P else 0)
         if random.random() < 0.75:
             for _ in range(passos):
                 ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
                 ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
 
-        # Reprodução
-        limite_mitose = 140 if (has_F and st.session_state.CO2 > 8000) else 160
+        limite_mitose = 130 if (has_F and st.session_state.CO2 > 5000) else 160
         if ser['energia'] >= limite_mitose:
             ser['energia'] = 60
-            letras = list(dna)
+            letras = list(dna_base)
+            
+            # MUTAÇÕES E GERAÇÃO DE NOVOS GENES/REGRAS
             if random.random() < 0.35:
-                if random.random() < 0.5: letras.append(random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
-                else: letras.pop(random.randint(0, len(letras)-1))
+                if random.random() < 0.5: 
+                    nova_letra = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                    letras.append(nova_letra)
+                    
+                    # 10% de chance de uma letra inédita criar uma nova lei de supressão no ecossistema
+                    if nova_letra not in st.session_state.genes_descobertos and random.random() < 0.10:
+                        alvo = random.choice(list(st.session_state.genes_descobertos))
+                        if nova_letra != alvo:
+                            st.session_state.inibicoes[nova_letra] = alvo
+                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! A mutação [{nova_letra}] inativa o gene [{alvo}]!")
+
+                else: 
+                    letras.pop(random.randint(0, len(letras)-1))
             
             novos_nascidos.append({
-                'x': ser['x'], 'y': ser['y'], 'energia': 60, 'dna': "".join(letras), 
+                'x': ser['x'], 'y': ser['y'], 'energia': 60, 'dna': "".join(letras), 'dna_ativo': "",
                 'geracao': ser['geracao'] + 1, 'raca': ser['raca']
             })
 
     pop_viva = [s for s in pop_atual if s['energia'] > 0] + novos_nascidos
 
-    # OTIMIZAÇÃO: Agrupar por posições para Cadeia Alimentar O(N)
     posicoes = {}
     for s in pop_viva:
         pos = (s['x'], s['y'])
@@ -157,26 +175,26 @@ def rodar_turno_servidor():
         for a in seres_aqui:
             for b in seres_aqui:
                 if a == b or a['energia'] <= 0 or b['energia'] <= 0: continue
-                has_Fa, has_Ha, has_Ca = "F" in a['dna'], "H" in a['dna'], "C" in a['dna']
-                has_Fb = "F" in b['dna']
+                # Usa o DNA ATIVO para a caça (um ser com 'C' e 'F' caça e não faz fotossíntese)
+                dna_a, dna_b = a.get('dna_ativo', a['dna']), b.get('dna_ativo', b['dna'])
+                has_Fa, has_Ha, has_Ca = "F" in dna_a, "H" in dna_a, "C" in dna_a
+                has_Fb = "F" in dna_b
                 
-                if has_Ca and not has_Fb: # Carnívoro caça animal
+                if has_Ca and not has_Fb:
                     b['energia'] = 0
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 15
                     a['energia'] = min(200, a['energia'] + 50)
-                elif has_Ha and has_Fb: # Herbívoro caça planta
+                elif has_Ha and has_Fb:
                     b['energia'] = 0
                     mapa_atual[pos[1]][pos[0]]['nutrientes'] += 10
                     a['energia'] = min(200, a['energia'] + 40)
 
-    # Limpeza e Cadáveres
     for s in pop_atual:
         if s['energia'] <= 0:
             mapa_atual[s['y']][s['x']]['nutrientes'] += 30
 
     pop_final = [s for s in pop_viva if s['energia'] > 0]
     
-    # Rastreio de Genes Exatos
     genes_atuais = set()
     contagem_genes = {}
     for s in pop_final:
@@ -184,29 +202,27 @@ def rodar_turno_servidor():
             genes_atuais.add(letra)
             contagem_genes[letra] = contagem_genes.get(letra, 0) + 1
 
-    # Atualizar Descobertas e Extinções
     novos_genes = genes_atuais - st.session_state.genes_descobertos
     if novos_genes:
         st.session_state.genes_descobertos.update(novos_genes)
-        st.session_state.alertas.append(f"MUTACÃO: Novos genes descobertos na biosfera: {novos_genes}")
-    
-    genes_perdidos = st.session_state.genes_descobertos - genes_atuais
-    st.session_state.genes_extintos = genes_perdidos
+    st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
 
     if len(pop_final) < 4:
-        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFhhccddAA", 'geracao': 1, 'raca': "Primitiva"})
+        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFhhccddAA", 'dna_ativo': "FFhhccddAA", 'geracao': 1, 'raca': "Primitiva"})
 
     st.session_state.populacao = pop_final
     st.session_state.mapa = mapa_atual
     st.session_state.contagem_genes = contagem_genes
 
-    censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0}
+    censo = {'Planta': 0, 'Herbívoro': 0, 'Carnívoro': 0, 'Onívoro': 0, 'Neutro': 0}
     for s in pop_final:
-        has_F, has_H, has_C = "F" in s['dna'], "H" in s['dna'], "C" in s['dna']
+        dna_exp = s.get('dna_ativo', s['dna'])
+        has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
         if has_H and has_C: censo['Onívoro'] += 1
         elif has_C: censo['Carnívoro'] += 1
         elif has_H: censo['Herbívoro'] += 1
         elif has_F: censo['Planta'] += 1
+        else: censo['Neutro'] += 1
 
     st.session_state.historico_populacao.append({
         'Turno': st.session_state.turno, 'Plantas': censo['Planta'], 
@@ -222,10 +238,12 @@ col_mapa, col_graficos = st.columns([1, 1.2])
 with col_mapa:
     st.subheader(f"📅 Ano {st.session_state.ano} | Dia {st.session_state.dia} ({st.session_state.estacao})")
     
-    # Progresso Atmosférico
-    st.markdown(f"**☁️ Atmosfera Planetária**")
-    st.progress(min(1.0, max(0.0, st.session_state.O2 / 20000.0)), text=f"Oxigénio (O2): {int(st.session_state.O2)}")
-    st.progress(min(1.0, max(0.0, st.session_state.CO2 / 20000.0)), text=f"Dióxido de Carbono (CO2): {int(st.session_state.CO2)}")
+    pct_O2 = st.session_state.O2 / 1000.0
+    pct_CO2 = st.session_state.CO2 / 1000.0
+
+    st.markdown(f"**☁️ Composição da Atmosfera**")
+    st.progress(min(1.0, max(0.0, pct_O2 / 35.0)), text=f"Oxigénio (O2): {pct_O2:.2f}%")
+    st.progress(min(1.0, max(0.0, pct_CO2 / 15.0)), text=f"Dióxido de Carbono (CO2): {pct_CO2:.2f}%")
 
     tamanho = 15
     html_grid = "<table style='width:100%; border-collapse:collapse; text-align:center; font-family:monospace; font-size:16px;'>"
@@ -241,7 +259,9 @@ with col_mapa:
             else: bg_color = "#124463"
             
             if ser_aqui:
-                has_F, has_H, has_C = "F" in ser_aqui['dna'], "H" in ser_aqui['dna'], "C" in ser_aqui['dna']
+                # O Renderizador agora avalia apenas os genes não inativados
+                dna_exp = ser_aqui.get('dna_ativo', ser_aqui['dna'])
+                has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
                 if has_H and has_C: char, color = 'O', '#ffcc00'
                 elif has_C: char, color = 'C', '#ff3333'
                 elif has_H: char, color = 'H', '#33ff33'
@@ -266,36 +286,24 @@ with col_graficos:
         df_historico = pd.DataFrame(st.session_state.historico_populacao)
         st.line_chart(df_historico.set_index('Turno')[['Plantas', 'Herbívoros', 'Carnívoros', 'Onívoros']], height=250)
     
-    # Censo em Percentagem
-    ultimo_censo = st.session_state.historico_populacao[-1]
-    if total_pop > 0:
-        pct_p = (ultimo_censo['Plantas'] / total_pop) * 100
-        pct_h = (ultimo_censo['Herbívoros'] / total_pop) * 100
-        pct_c = (ultimo_censo['Carnívoros'] / total_pop) * 100
-        st.markdown(f"**Distribuição:** 🌱 Plantas: **{pct_p:.1f}%** | 🦕 Herbívoros: **{pct_h:.1f}%** | 🐅 Carnívoros: **{pct_c:.1f}%**")
-
-    # Painel Genético Detalhado
     st.subheader("🧬 Laboratório de Genética")
     col_g1, col_g2 = st.columns(2)
     
     with col_g1:
-        st.markdown("**Genes Circulantes (% da População):**")
+        st.markdown("**Genes Mais Dominantes (%):**")
         genes_formatados = []
-        # Ordenar os genes do mais comum para o mais raro
         genes_ordenados = sorted(st.session_state.contagem_genes.items(), key=lambda x: x[1], reverse=True)
-        for letra, contagem in genes_ordenados[:8]: # Mostra o Top 8
+        for letra, contagem in genes_ordenados[:10]: 
             pct_gene = (contagem / total_pop) * 100 if total_pop > 0 else 0
             genes_formatados.append(f"`{letra}`: {pct_gene:.1f}%")
         st.markdown(" | ".join(genes_formatados))
         
     with col_g2:
-        st.markdown("**Registo de Extinções:**")
-        if st.session_state.genes_extintos:
-            st.error(f"💀 Extintos: {', '.join(st.session_state.genes_extintos)}")
-        else:
-            st.success("Nenhum gene foi perdido ainda.")
+        st.markdown("**⛔ Regras de Supressão (Epistasia):**")
+        supressoes = [f"`{k}` silencia `{v}`" for k, v in st.session_state.inibicoes.items()]
+        st.info(" | ".join(supressoes))
 
-    for alerta in st.session_state.alertas[-2:]:
+    for alerta in st.session_state.alertas[-3:]:
         st.caption(f"📜 {alerta}")
 
 if executando:

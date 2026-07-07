@@ -12,7 +12,7 @@ if 'turno' not in st.session_state:
     st.session_state.ano = 1
     st.session_state.estacao = "Primavera"
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Epistasia e Leis de Supressão Ativadas."]
+    st.session_state.alertas = ["Gênesis: Bug Genético Corrigido. Biomas estabilizados."]
     
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
@@ -20,7 +20,6 @@ if 'turno' not in st.session_state:
     st.session_state.genes_descobertos = set(["F", "H", "C", "D", "A", "T"])
     st.session_state.genes_extintos = set()
     
-    # REGRAS DE EPISTASIA INICIAIS (Quem inativa quem)
     st.session_state.inibicoes = {'H': 'F', 'C': 'F'}
 
     tamanho = 15
@@ -36,10 +35,11 @@ if 'turno' not in st.session_state:
     st.session_state.mapa = mapa
 
     populacao = []
+    # Injeta PLANTAS PURAS para iniciar a base da cadeia alimentar
     for _ in range(25):
         populacao.append({
             'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1),
-            'energia': 100, 'dna': "FFhhccddAA" if random.random() < 0.7 else "FFhhccddTT",
+            'energia': 100, 'dna': "FFffddddAA" if random.random() < 0.5 else "FFffddddTT",
             'dna_ativo': "", 'geracao': 1, 'raca': "Primitiva"
         })
     st.session_state.populacao = populacao
@@ -83,15 +83,16 @@ def rodar_turno_servidor():
         if ser['energia'] <= 0: continue
         
         quad = mapa_atual[ser['y']][ser['x']]
-        dna_base = ser['dna'].upper()
         
-        # 1. PROCESSAR EPISTASIA (MASCARAR GENES)
+        # CORREÇÃO: Lê o DNA exatamente como ele é (preservando minúsculas recessivas)
+        dna_base = ser['dna'] 
+        
         dna_ativo = dna_base
         for supressor, alvo in st.session_state.inibicoes.items():
-            if supressor in dna_ativo:
-                dna_ativo = dna_ativo.replace(alvo, "") # Remove o gene alvo da expressão
+            if supressor in dna_ativo: # Só suprime se tiver a letra Maiúscula (Dominante)
+                dna_ativo = dna_ativo.replace(alvo, "") 
         
-        ser['dna_ativo'] = dna_ativo # Guarda o DNA que realmente funciona para usar no render
+        ser['dna_ativo'] = dna_ativo 
         
         has_F, has_H, has_C = "F" in dna_ativo, "H" in dna_ativo, "C" in dna_ativo
         has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
@@ -141,21 +142,20 @@ def rodar_turno_servidor():
             ser['energia'] = 60
             letras = list(dna_base)
             
-            # MUTAÇÕES E GERAÇÃO DE NOVOS GENES/REGRAS
             if random.random() < 0.35:
                 if random.random() < 0.5: 
-                    nova_letra = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                    # Adiciona letras maiúsculas ou minúsculas
+                    nova_letra = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
                     letras.append(nova_letra)
                     
-                    # 10% de chance de uma letra inédita criar uma nova lei de supressão no ecossistema
-                    if nova_letra not in st.session_state.genes_descobertos and random.random() < 0.10:
-                        alvo = random.choice(list(st.session_state.genes_descobertos))
+                    if nova_letra.isupper() and nova_letra not in st.session_state.genes_descobertos and random.random() < 0.10:
+                        alvo = random.choice([g for g in st.session_state.genes_descobertos if g.isupper()])
                         if nova_letra != alvo:
                             st.session_state.inibicoes[nova_letra] = alvo
-                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! A mutação [{nova_letra}] inativa o gene [{alvo}]!")
+                            st.session_state.alertas.append(f"T{st.session_state.turno}: ⛔ EPISTASIA! Gene [{nova_letra}] inativa [{alvo}]!")
 
                 else: 
-                    letras.pop(random.randint(0, len(letras)-1))
+                    if len(letras) > 3: letras.pop(random.randint(0, len(letras)-1))
             
             novos_nascidos.append({
                 'x': ser['x'], 'y': ser['y'], 'energia': 60, 'dna': "".join(letras), 'dna_ativo': "",
@@ -175,7 +175,6 @@ def rodar_turno_servidor():
         for a in seres_aqui:
             for b in seres_aqui:
                 if a == b or a['energia'] <= 0 or b['energia'] <= 0: continue
-                # Usa o DNA ATIVO para a caça (um ser com 'C' e 'F' caça e não faz fotossíntese)
                 dna_a, dna_b = a.get('dna_ativo', a['dna']), b.get('dna_ativo', b['dna'])
                 has_Fa, has_Ha, has_Ca = "F" in dna_a, "H" in dna_a, "C" in dna_a
                 has_Fb = "F" in dna_b
@@ -198,7 +197,9 @@ def rodar_turno_servidor():
     genes_atuais = set()
     contagem_genes = {}
     for s in pop_final:
-        for letra in set(s['dna'].upper()):
+        # A estatística foca-se nos genes dominantes (Maiúsculas) que estão ativos no DNA de cada ser
+        dna_ativo = s.get('dna_ativo', s['dna'])
+        for letra in set(c for c in dna_ativo if c.isupper()):
             genes_atuais.add(letra)
             contagem_genes[letra] = contagem_genes.get(letra, 0) + 1
 
@@ -207,8 +208,9 @@ def rodar_turno_servidor():
         st.session_state.genes_descobertos.update(novos_genes)
     st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
 
+    # CORREÇÃO: Salvaguarda introduz PLANTAS PURAS para reconstruir a cadeia
     if len(pop_final) < 4:
-        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFhhccddAA", 'dna_ativo': "FFhhccddAA", 'geracao': 1, 'raca': "Primitiva"})
+        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFffddddAA" if random.random() < 0.5 else "FFffddddTT", 'dna_ativo': "", 'geracao': 1, 'raca': "Esporo Primordial"})
 
     st.session_state.populacao = pop_final
     st.session_state.mapa = mapa_atual
@@ -259,7 +261,6 @@ with col_mapa:
             else: bg_color = "#124463"
             
             if ser_aqui:
-                # O Renderizador agora avalia apenas os genes não inativados
                 dna_exp = ser_aqui.get('dna_ativo', ser_aqui['dna'])
                 has_F, has_H, has_C = "F" in dna_exp, "H" in dna_exp, "C" in dna_exp
                 if has_H and has_C: char, color = 'O', '#ffcc00'

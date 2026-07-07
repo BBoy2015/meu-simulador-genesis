@@ -13,7 +13,7 @@ if 'turno' not in st.session_state:
     st.session_state.ano = 1
     st.session_state.estacao = "Verão" 
     st.session_state.historico_populacao = []
-    st.session_state.alertas = ["Gênesis: Ciclo Circadiano (Dia/Noite) e Fisiologia Botânica avançada ativados."]
+    st.session_state.alertas = ["Gênesis: A vida começou nos oceanos (80% Algas / 20% Proto-Peixes)."]
     
     st.session_state.O2 = 21000.0  
     st.session_state.CO2 = 1000.0  
@@ -22,8 +22,10 @@ if 'turno' not in st.session_state:
     st.session_state.genes_extintos = set()
     st.session_state.inibicoes = {'H': 'F', 'C': 'F'}
 
+    # 1. GERAR O MAPA PRIMEIRO (Para sabermos onde está a água)
     tamanho = 15
     mapa = []
+    coords_agua = []
     for y in range(tamanho):
         linha = []
         for x in range(tamanho):
@@ -31,16 +33,33 @@ if 'turno' not in st.session_state:
             tipo = 'Terra' if dist_centro < 6 else 'Água'
             temp = 'Frio' if y < 4 else ('Quente' if y > 10 else 'Temperado')
             linha.append({'tipo': tipo, 'temperatura': temp, 'nutrientes': 0})
+            if tipo == 'Água':
+                coords_agua.append((x, y))
         mapa.append(linha)
     st.session_state.mapa = mapa
 
+    # 2. ORIGEM DA VIDA: 80% Plantas Aquáticas (Algas), 20% Animais Aquáticos (Proto-Peixes)
     populacao = []
-    for _ in range(25):
+    total_inicial = 30
+    num_plantas = int(total_inicial * 0.8) # 24 Plantas
+    num_animais = total_inicial - num_plantas # 6 Herbívoros
+
+    for _ in range(num_plantas):
+        x, y = random.choice(coords_agua) # Nascem ESTRITAMENTE na água
         populacao.append({
-            'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1),
-            'energia': 100, 'dna': "FFffddddAARR" if random.random() < 0.5 else "FFffddddTTRR",
-            'dna_ativo': "", 'geracao': 1, 'raca': "Primitiva"
+            'x': x, 'y': y,
+            'energia': 120, 'dna': "FFffddddAARR", # F (Foto), A (Água), R (Respira)
+            'dna_ativo': "", 'geracao': 1, 'raca': "Alga Primordial"
         })
+
+    for _ in range(num_animais):
+        x, y = random.choice(coords_agua) # Nascem ESTRITAMENTE na água
+        populacao.append({
+            'x': x, 'y': y,
+            'energia': 150, 'dna': "HHffddddAARR", # H (Herbívoro), A (Água), R (Respira)
+            'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"
+        })
+        
     st.session_state.populacao = populacao
 
 if st.session_state.CO2 < 0 or st.session_state.O2 > 100000:
@@ -235,8 +254,16 @@ def rodar_turno_servidor():
         st.session_state.genes_descobertos.update(novos_genes)
     st.session_state.genes_extintos = st.session_state.genes_descobertos - genes_atuais
 
+    # SALVAGUARDA DE EXTINÇÃO: Insere esporos aquáticos
     if len(pop_final) < 4:
-        pop_final.append({'x': random.randint(0, tamanho-1), 'y': random.randint(0, tamanho-1), 'energia': 100, 'dna': "FFffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Esporo"})
+        coords_agua = [(x, y) for y in range(tamanho) for x in range(tamanho) if mapa_atual[y][x]['tipo'] == 'Água']
+        if not coords_agua: coords_agua = [(tamanho//2, tamanho//2)] # Fallback
+        
+        # Gera uma Alga e um Proto-Peixe para reiniciar o ciclo
+        x1, y1 = random.choice(coords_agua)
+        x2, y2 = random.choice(coords_agua)
+        pop_final.append({'x': x1, 'y': y1, 'energia': 100, 'dna': "FFffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Alga"})
+        pop_final.append({'x': x2, 'y': y2, 'energia': 100, 'dna': "HHffddddAARR", 'dna_ativo': "", 'geracao': 1, 'raca': "Proto-Peixe"})
 
     st.session_state.populacao = pop_final
     st.session_state.mapa = mapa_atual

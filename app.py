@@ -8,10 +8,10 @@ st.set_page_config(page_title="Gênesis - Vida Artificial", layout="wide")
 # --- INICIALIZAÇÃO DO SERVIDOR ---
 if 'turno' not in st.session_state:
     st.session_state.turno = 1
-    st.session_state.ciclo_solar = "Dia" # Novo: Controla o Sol
+    st.session_state.ciclo_solar = "Dia" 
     st.session_state.dia = 1
     st.session_state.ano = 1
-    st.session_state.estacao = "Verão" # Começa no Verão para estabilizar rápido
+    st.session_state.estacao = "Verão" 
     st.session_state.historico_populacao = []
     st.session_state.alertas = ["Gênesis: Ciclo Circadiano (Dia/Noite) e Fisiologia Botânica avançada ativados."]
     
@@ -62,31 +62,29 @@ def rodar_turno_servidor():
     tamanho = 15
     st.session_state.turno += 1
     
-    # --- NOVO SISTEMA DE CALENDÁRIO (DIA/NOITE) ---
+    # --- SISTEMA DE CALENDÁRIO (DIA/NOITE) ---
     if st.session_state.ciclo_solar == "Dia":
         st.session_state.ciclo_solar = "Noite"
     else:
         st.session_state.ciclo_solar = "Dia"
-        st.session_state.dia += 1 # O dia só passa depois de uma noite
+        st.session_state.dia += 1 
         
-        if st.session_state.dia > 15: # Meses mais curtos para vermos as estações
+        if st.session_state.dia > 15: 
             st.session_state.dia = 1
             st.session_state.ano += 1
             estacoes = ["Primavera", "Verão", "Outono", "Inverno"]
             st.session_state.estacao = estacoes[st.session_state.ano % 4]
 
-    # --- LÓGICA DE FOTOSSÍNTESE BASEADA NA SUA FÓRMULA ---
     eh_dia = st.session_state.ciclo_solar == "Dia"
-    unidade_resp = 0.5 # A respiração base é 0.5 O2
+    unidade_resp = 0.5 
     
     multiplicador_foto = 0
     if eh_dia:
         if st.session_state.estacao in ["Verão", "Primavera"]:
-            multiplicador_foto = random.uniform(5.0, 15.0) # 5 a 15x maior que a respiração
-        else: # Outono / Inverno
-            multiplicador_foto = random.uniform(1.0, 4.0)  # 1 a 4x maior que a respiração
+            multiplicador_foto = random.uniform(5.0, 15.0) 
+        else: 
+            multiplicador_foto = random.uniform(1.0, 4.0)  
             
-    # Bónus extra de CO2 (Efeito Estufa)
     if st.session_state.CO2 > 3000 and eh_dia: 
         multiplicador_foto += 2.0
     
@@ -111,22 +109,18 @@ def rodar_turno_servidor():
         has_A, has_T, has_P = "A" in dna_ativo, "T" in dna_ativo, "P" in dna_ativo
         has_R = "R" in dna_ativo 
         
-        # O Custo base de manter o corpo vivo
         custo = 1.0 + (len(dna_base) * 0.02)
         if quad['temperatura'] == 'Frio': custo += 1.0
         if has_P: custo += 1.5 
         if quad['tipo'] == 'Terra' and not has_T and not has_P: custo += 3.0 
         if quad['tipo'] == 'Água' and not has_A and not has_P: custo += 3.0 
         
-        # Animais são menos ativos à noite
         passos_base = 1 if eh_dia else (0 if random.random() < 0.5 else 1)
 
-        # --- RESPIRAÇÃO (Acontece SEMPRE) ---
+        # --- RESPIRAÇÃO ---
         if has_R:
-            # Animais gastam 2 unidades_resp (1.0 O2), Plantas gastam 1 unidade_resp (0.5 O2)
             consumo_o2 = (unidade_resp * 2) if (has_H or has_C) else unidade_resp 
             
-            # Animais abrandam no inverno
             if st.session_state.estacao == "Inverno" and (has_H or has_C):
                 consumo_o2 *= 0.8
             
@@ -134,13 +128,13 @@ def rodar_turno_servidor():
                 st.session_state.O2 -= consumo_o2
                 st.session_state.CO2 += consumo_o2
             else:
-                ser['energia'] -= 5.0 # Asfixia aeróbica
+                ser['energia'] -= 5.0 
                 passos_base = 0 
         else:
             if st.session_state.O2 > 5000.0: 
-                ser['energia'] -= 3.0 # Toxicidade
+                ser['energia'] -= 3.0 
 
-        # --- FOTOSSÍNTESE (Apenas de Dia para plantas F) ---
+        # --- FOTOSSÍNTESE ---
         if has_F:
             if eh_dia:
                 consumo_co2_foto = unidade_resp * multiplicador_foto
@@ -148,16 +142,13 @@ def rodar_turno_servidor():
                 if st.session_state.CO2 >= consumo_co2_foto:
                     st.session_state.CO2 -= consumo_co2_foto
                     st.session_state.O2 += consumo_co2_foto
-                    # Ganho de energia calórico para a planta (proporcional ao CO2)
                     ganho = (consumo_co2_foto * 1.5) if quad['tipo'] == 'Água' else (consumo_co2_foto * 0.8)
                     ser['energia'] += ganho
                 else:
-                    ser['energia'] -= 1.0 # Leve stress por falta de CO2 (não morre rápido, só não cresce)
+                    ser['energia'] -= 1.0 
             else:
-                # À NOITE: Não ganham energia, só gastam com a respiração e manutenção
                 ser['energia'] -= 1.0
 
-            # Fotorrespiração (Sobrecarga de O2)
             if has_R and st.session_state.O2 > 21800.0 and eh_dia:
                 ser['energia'] -= 2.0 
 
@@ -177,7 +168,6 @@ def rodar_turno_servidor():
                 ser['x'] = max(0, min(tamanho-1, ser['x'] + random.choice([-1, 0, 1])))
                 ser['y'] = max(0, min(tamanho-1, ser['y'] + random.choice([-1, 0, 1])))
 
-        # Custo calórico de reprodução mais realista
         limite_mitose = 150 
         if ser['energia'] >= limite_mitose:
             ser['energia'] = 70
@@ -287,7 +277,6 @@ with col_mapa:
     st.progress(min(1.0, max(0.0, pct_O2 / 25.0)), text=f"Oxigénio (O2): {pct_O2:.2f}% (Máx: 22%)")
     st.progress(min(1.0, max(0.0, pct_CO2 / 15.0)), text=f"Dióxido de Carbono (CO2): {pct_CO2:.2f}%")
 
-    # Escurece o mapa à noite com CSS
     brilho_mapa = "1.0" if st.session_state.ciclo_solar == "Dia" else "0.6"
     
     tamanho = 15
@@ -353,5 +342,3 @@ with col_graficos:
 if executando:
     time.sleep(velocidade)
     st.rerun()
-
-```
